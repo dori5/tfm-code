@@ -1,0 +1,3 @@
+1M-XX - Arquitectura básica, no escalable (despliegue en máquina local)
+C-PX - Arquitectura con procesamiento escalable (despliegue sobre clúster de máquinas Docker)
+C-PX - Arquitectura con procesamiento y almacenamiento escalables (despliegue sobre clúster de máquinas Docker)

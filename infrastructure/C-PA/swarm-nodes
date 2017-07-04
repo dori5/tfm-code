@@ -1,0 +1,392 @@
+# Build the two images needed: 1 for hadoop master and workers and 1 for spark master and workers (we are inside FD (fully distributed) directory)
+
+# Login into docker
+
+docker login
+
+-------------------------------------------------------------------------------------------------
+
+# Spark master and workers
+
+cd spark
+docker build -t medu5a/spark-master-worker .
+
+# Push the spark image to docker-hub
+
+docker push medu5a/spark-master-worker
+
+# Hadoop master and workers
+
+cd hadoop-dotnet
+docker build -t medu5a/hadoop-master-worker .
+
+# Push the hadoop image to docker-hub
+
+docker push medu5a/hadoop-master-worker
+
+-------------------------------------------------------------------------------------------------
+
+# Docker Machine for Consul
+
+docker-machine create -d virtualbox consul-machine
+
+#Running pre-create checks...
+#Creating machine...
+#(consul-machine) Copying /root/.docker/machine/cache/boot2docker.iso to /root/.docker/machine/machines/consul-machine/boot2docker.iso...
+#(consul-machine) Creating VirtualBox VM...
+#(consul-machine) Creating SSH key...
+#(consul-machine) Starting the VM...
+#(consul-machine) Check network to re-create if needed...
+#(consul-machine) Waiting for an IP...
+#Waiting for machine to be running, this may take a few minutes...
+#Detecting operating system of created instance...
+#Waiting for SSH to be available...
+#Detecting the provisioner...
+#Provisioning with boot2docker...
+#Copying certs to the local machine directory...
+#Copying certs to the remote machine...
+#Setting Docker configuration on the remote daemon...
+#Checking connection to Docker...
+#Docker is up and running!
+#To see how to connect your Docker Client to the Docker Engine running on this virtual machine, run: docker-machine env consul-machine
+
+-------------------------------------------------------------------------------------------------
+
+# Start Consul
+
+docker $(docker-machine config consul-machine) \
+run -d --restart=always -p "8500:8500" -h "consul" \
+progrium/consul -server -bootstrap
+
+#Unable to find image 'progrium/consul:latest' locally
+#latest: Pulling from progrium/consul
+#c862d82a67a2: Pull complete 
+#0e7f3c08384e: Pull complete 
+#0e221e32327a: Pull complete 
+#09a952464e47: Pull complete 
+#60a1b927414d: Pull complete 
+#4c9f46b5ccce: Pull complete 
+#417d86672aa4: Pull complete 
+#b0d47ad24447: Pull complete 
+#fd5300bd53f0: Pull complete 
+#a3ed95caeb02: Pull complete 
+#d023b445076e: Pull complete 
+#ba8851f89e33: Pull complete 
+#5d1cefca2a28: Pull complete 
+#Digest: sha256:8cc8023462905929df9a79ff67ee435a36848ce7a10f18d6d0faba9306b97274
+#Status: Downloaded newer image for progrium/consul:latest
+#424105b7a5228356f84411912f8c1f05dc802745d981e651608aa2ac03753118
+
+-------------------------------------------------------------------------------------------------
+
+# Docker Swarm master
+
+docker-machine create -d virtualbox --swarm --swarm-master \
+--swarm-discovery="consul://$(docker-machine ip consul-machine):8500" \
+--engine-opt="cluster-store=consul://$(docker-machine ip consul-machine):8500" \
+--engine-opt="cluster-advertise=eth1:2376" swarm-manager
+
+#Running pre-create checks...
+#Creating machine...
+#(swarm-manager) Copying /root/.docker/machine/cache/boot2docker.iso to /root/.docker/machine/machines/swarm-manager/boot2docker.iso...
+#(swarm-manager) Creating VirtualBox VM...
+#(swarm-manager) Creating SSH key...
+#(swarm-manager) Starting the VM...
+#(swarm-manager) Check network to re-create if needed...
+#(swarm-manager) Waiting for an IP...
+#Waiting for machine to be running, this may take a few minutes...
+#Detecting operating system of created instance...
+#Waiting for SSH to be available...
+#Detecting the provisioner...
+#Provisioning with boot2docker...
+#Copying certs to the local machine directory...
+#Copying certs to the remote machine...
+#Setting Docker configuration on the remote daemon...
+#Configuring swarm...
+#Checking connection to Docker...
+#Docker is up and running!
+#To see how to connect your Docker Client to the Docker Engine running on this virtual machine, run: docker-machine env swarm-manager
+
+-------------------------------------------------------------------------------------------------
+
+# Docker Swarm swarm-node-hadoop-01 (for one hadoop worker)
+
+docker-machine create -d virtualbox --swarm \
+--swarm-discovery="consul://$(docker-machine ip consul-machine):8500" \
+--engine-opt="cluster-store=consul://$(docker-machine ip consul-machine):8500" \
+--engine-opt="cluster-advertise=eth1:2376" --engine-label role=hadoop swarm-node-hadoop-01
+
+-------------------------------------------------------------------------------------------------
+
+# Docker Swarm swarm-node-hadoop-02 (for the other hadoop worker)
+
+docker-machine create -d virtualbox --swarm \
+--swarm-discovery="consul://$(docker-machine ip consul-machine):8500" \
+--engine-opt="cluster-store=consul://$(docker-machine ip consul-machine):8500" \
+--engine-opt="cluster-advertise=eth1:2376" --engine-label role=hadoop swarm-node-hadoop-02
+
+-------------------------------------------------------------------------------------------------
+
+# Docker Swarm swarm-node-01 (for one spark worker)
+
+docker-machine create -d virtualbox --swarm \
+--swarm-discovery="consul://$(docker-machine ip consul-machine):8500" \
+--engine-opt="cluster-store=consul://$(docker-machine ip consul-machine):8500" \
+--engine-opt="cluster-advertise=eth1:2376" --engine-label role=worker swarm-node-01
+
+-------------------------------------------------------------------------------------------------
+
+# Docker Swarm swarm-node-02 (for the other spark worker)
+
+docker-machine create -d virtualbox --swarm \
+--swarm-discovery="consul://$(docker-machine ip consul-machine):8500" \
+--engine-opt="cluster-store=consul://$(docker-machine ip consul-machine):8500" \
+--engine-opt="cluster-advertise=eth1:2376" --engine-label role=worker swarm-node-02
+
+-------------------------------------------------------------------------------------------------
+
+# List the existent docker machines 
+
+docker-machine ls
+
+#NAME                   ACTIVE      DRIVER       STATE     URL                         SWARM                    DOCKER        ERRORS
+#consul-machine         -           virtualbox   Running   tcp://192.168.99.100:2376                            v17.03.1-ce   
+#swarm-manager          * (swarm)   virtualbox   Running   tcp://192.168.99.101:2376   swarm-manager (master)   v17.03.1-ce   
+#swarm-node-01          -           virtualbox   Running   tcp://192.168.99.104:2376   swarm-manager            v17.03.1-ce   
+#swarm-node-02          -           virtualbox   Running   tcp://192.168.99.105:2376   swarm-manager            v17.03.1-ce   
+#swarm-node-hadoop-01   -           virtualbox   Running   tcp://192.168.99.102:2376   swarm-manager            v17.03.1-ce   
+#swarm-node-hadoop-02   -           virtualbox   Running   tcp://192.168.99.103:2376   swarm-manager            v17.03.1-ce   
+
+-------------------------------------------------------------------------------------------------
+
+# Pull the image for the spark master / workers to all containers
+
+docker pull medu5a/spark-master-worker
+
+# Pull the image for the hadoop master / workers to all containers
+
+docker pull medu5a/hadoop-master-worker
+
+-------------------------------------------------------------------------------------------------
+
+# Configure to use Docker Swarm cluster
+
+eval "$(docker-machine env --swarm swarm-manager)"
+
+# Create master and hadoop containers inside their VMs
+
+docker-compose up -d spark-master hadoop-master
+
+# Creating fd_spark-master_1
+# Creating fd_hadoop-master_1
+
+-------------------------------------------------------------------------------------------------
+
+# Scale services (the workers in this case)
+
+docker-compose scale spark-worker=4 hadoop-worker=2 
+
+# Creating and starting fd_spark-worker_1 ... done
+# Creating and starting fd_spark-worker_2 ... done
+# Creating and starting fd_spark-worker_3 ... done
+# Creating and starting fd_spark-worker_4 ... done
+# Creating and starting fd_hadoop-worker_1 ... done
+# Creating and starting fd_hadoop-worker_2 ... done
+
+-------------------------------------------------------------------------------------------------
+
+# Docker info
+
+eval "$(docker-machine env --swarm swarm-manager)"
+
+docker info
+
+# Containers: 14
+#  Running: 14
+#  Paused: 0
+#  Stopped: 0
+# Images: 15
+# Server Version: swarm/1.2.6
+# Role: primary
+# Strategy: spread
+# Filters: health, port, containerslots, dependency, affinity, constraint, whitelist
+# Nodes: 5
+#  swarm-manager: 192.168.99.101:2376
+#   └ ID: BYWR:RRAK:EB6S:FQIA:64C2:FD5E:YV3M:FC2V:OVRN:4NI3:RM5Q:7D3W
+#   └ Status: Healthy
+#   └ Containers: 4 (4 Running, 0 Paused, 0 Stopped)
+#   └ Reserved CPUs: 0 / 1
+#   └ Reserved Memory: 0 B / 1.021 GiB
+#   └ Labels: kernelversion=4.4.57-boot2docker, operatingsystem=Boot2Docker 17.03.1-ce (TCL 7.2); HEAD : 4c264fa - Tue Mar 28 21:11:51 UTC 2017, provider=virtualbox, storagedriver=aufs
+#   └ UpdatedAt: 2017-04-05T01:57:58Z
+#   └ ServerVersion: 17.03.1-ce
+#  swarm-node-01: 192.168.99.104:2376
+#   └ ID: ZH2L:5MVZ:W6WH:4YT4:PPGP:REFU:NIZP:QWOX:BQ7S:TAWK:NSZP:RFHA
+#   └ Status: Healthy
+#   └ Containers: 3 (3 Running, 0 Paused, 0 Stopped)
+#   └ Reserved CPUs: 0 / 1
+#   └ Reserved Memory: 0 B / 1.021 GiB
+#   └ Labels: kernelversion=4.4.57-boot2docker, operatingsystem=Boot2Docker 17.03.1-ce (TCL 7.2); HEAD : 4c264fa - Tue Mar 28 21:11:51 UTC 2017, provider=virtualbox, role=worker, storagedriver=aufs
+#   └ UpdatedAt: 2017-04-05T01:58:29Z
+#   └ ServerVersion: 17.03.1-ce
+#  swarm-node-02: 192.168.99.105:2376
+#   └ ID: 634Y:N2J7:QIJ4:UWGO:XCRO:X6HZ:AP2M:ENW3:KSK3:HH4V:XQNY:DFLH
+#   └ Status: Healthy
+#   └ Containers: 3 (3 Running, 0 Paused, 0 Stopped)
+#   └ Reserved CPUs: 0 / 1
+#   └ Reserved Memory: 0 B / 1.021 GiB
+#   └ Labels: kernelversion=4.4.57-boot2docker, operatingsystem=Boot2Docker 17.03.1-ce (TCL 7.2); HEAD : 4c264fa - Tue Mar 28 21:11:51 UTC 2017, provider=virtualbox, role=worker, storagedriver=aufs
+#   └ UpdatedAt: 2017-04-05T01:58:03Z
+#   └ ServerVersion: 17.03.1-ce
+#  swarm-node-hadoop-01: 192.168.99.102:2376
+#   └ ID: GLK7:YM2C:P3CR:KZ7Z:SHIF:J2L7:2HXV:PRQM:FZNX:SCMQ:DCZG:FN73
+#   └ Status: Healthy
+#   └ Containers: 2 (2 Running, 0 Paused, 0 Stopped)
+#   └ Reserved CPUs: 0 / 1
+#   └ Reserved Memory: 0 B / 1.021 GiB
+#   └ Labels: kernelversion=4.4.57-boot2docker, operatingsystem=Boot2Docker 17.03.1-ce (TCL 7.2); HEAD : 4c264fa - Tue Mar 28 21:11:51 UTC 2017, provider=virtualbox, role=hadoop, storagedriver=aufs
+#   └ UpdatedAt: 2017-04-05T01:58:00Z
+#   └ ServerVersion: 17.03.1-ce
+#  swarm-node-hadoop-02: 192.168.99.103:2376
+#   └ ID: CC5Z:HMKJ:YGEB:TZ5N:H7MQ:F4BQ:IZNV:6K4J:I5YP:FIWP:6CUI:4IQF
+#   └ Status: Healthy
+#   └ Containers: 2 (2 Running, 0 Paused, 0 Stopped)
+#   └ Reserved CPUs: 0 / 1
+#   └ Reserved Memory: 0 B / 1.021 GiB
+#   └ Labels: kernelversion=4.4.57-boot2docker, operatingsystem=Boot2Docker 17.03.1-ce (TCL 7.2); HEAD : 4c264fa - Tue Mar 28 21:11:51 UTC 2017, provider=virtualbox, role=hadoop, storagedriver=aufs
+#   └ UpdatedAt: 2017-04-05T01:58:13Z
+#   └ ServerVersion: 17.03.1-ce
+
+-------------------------------------------------------------------------------------------------
+
+# Inspect the created containers
+
+docker ps -a
+
+# CONTAINER ID        IMAGE                         COMMAND                  CREATED              STATUS              PORTS                                                                                                                                                                    NAMES
+# 0ccbf08e2734        medu5a/hadoop-master-worker   "/usr/local/bin/st..."   About a minute ago   Up About a minute   8020/tcp, 8025/tcp, 8030-8033/tcp, 8040/tcp, 8042/tcp, 8088/tcp, 9000-9001/tcp, 19888/tcp, 50010/tcp, 50020/tcp, 50070/tcp, 50075/tcp, 50090/tcp                         swarm-node-hadoop-02/fd_hadoop-worker_2
+# f6bdbb489796        medu5a/hadoop-master-worker   "/usr/local/bin/st..."   About a minute ago   Up About a minute   8020/tcp, 8025/tcp, 8030-8033/tcp, 8040/tcp, 8042/tcp, 8088/tcp, 9000-9001/tcp, 19888/tcp, 50010/tcp, 50020/tcp, 50070/tcp, 50075/tcp, 50090/tcp                         swarm-node-hadoop-01/fd_hadoop-worker_1
+# 87c2a67a74db        medu5a/spark-master-worker    "bin/spark-class o..."   About a minute ago   Up About a minute   7012-7016/tcp, 8881/tcp                                                                                                                                                  swarm-node-02/fd_spark-worker_4
+# 50adaa9b4e2b        medu5a/spark-master-worker    "bin/spark-class o..."   About a minute ago   Up About a minute   7012-7016/tcp, 8881/tcp                                                                                                                                                  swarm-node-01/fd_spark-worker_2
+# 675efa13ae11        medu5a/spark-master-worker    "bin/spark-class o..."   About a minute ago   Up About a minute   7012-7016/tcp, 8881/tcp                                                                                                                                                  swarm-node-02/fd_spark-worker_3
+# 8752c1b7a1d2        medu5a/spark-master-worker    "bin/spark-class o..."   About a minute ago   Up About a minute   7012-7016/tcp, 8881/tcp                                                                                                                                                  swarm-node-01/fd_spark-worker_1
+# 2d8b46b77965        medu5a/hadoop-master-worker   "/usr/local/bin/st..."   About a minute ago   Up About a minute   8020/tcp, 8025/tcp, 8030-8033/tcp, 8040/tcp, 8042/tcp, 8088/tcp, 9000-9001/tcp, 19888/tcp, 50010/tcp, 50020/tcp, 50075/tcp, 50090/tcp, 192.168.99.101:50070->50070/tcp   swarm-manager/fd_hadoop-master_1
+# 26be31b6f000        medu5a/spark-master-worker    "bin/spark-class o..."   About a minute ago   Up About a minute   192.168.99.101:4040->4040/tcp, 192.168.99.101:6066->6066/tcp, 192.168.99.101:7077->7077/tcp, 192.168.99.101:8080->8080/tcp, 7001-7006/tcp                                swarm-manager/fd_spark-master_1
+# 90e9ef5eee74        swarm:latest                  "/swarm join --adv..."   20 minutes ago       Up 20 minutes       2375/tcp                                                                                                                                                                 swarm-node-02/swarm-agent
+# 0714cc47fcdd        swarm:latest                  "/swarm join --adv..."   21 minutes ago       Up 21 minutes       2375/tcp                                                                                                                                                                 swarm-node-01/swarm-agent
+# ed1ebbeedaa3        swarm:latest                  "/swarm join --adv..."   22 minutes ago       Up 22 minutes       2375/tcp                                                                                                                                                                 swarm-node-hadoop-02/swarm-agent
+# 11429d698417        swarm:latest                  "/swarm join --adv..."   23 minutes ago       Up 23 minutes       2375/tcp                                                                                                                                                                 swarm-node-hadoop-01/swarm-agent
+# 320f71dab691        swarm:latest                  "/swarm join --adv..."   24 minutes ago       Up 24 minutes       2375/tcp                                                                                                                                                                 swarm-manager/swarm-agent
+# 2461ae96c165        swarm:latest                  "/swarm manage --t..."   24 minutes ago       Up 24 minutes       2375/tcp, 192.168.99.101:3376->3376/tcp                                                                                                                                  swarm-manager/swarm-agent-master
+
+-------------------------------------------------------------------------------------------------
+
+# Remove cluster
+
+docker-machine rm consul-machine swarm-manager swarm-node-hadoop-01 swarm-node-hadoop-02 swarm-node-01 swarm-node-02
+
+-------------------------------------------------------------------------------------------------
+
+# Enter the hadoop-master container
+
+docker exec -it fd_hadoop-master_1 /bin/bash
+cd /usr/local/hadoop
+
+# Check Hadoop daemons running in the container
+
+jps
+
+19 NameNode
+54 ResourceManager
+311 Jps
+
+# Put the datasets into HDFS
+
+bin/hadoop fs -mkdir /data
+bin/hadoop fs -put ./datasets/user_artist_data.txt ./datasets/artist_alias.txt ./datasets/artist_data.txt /data
+
+# Check files exist inside the HDFS
+
+bin/hadoop fs -ls /data
+
+#Found 3 items
+#-rw-r--r--   3 root supergroup    2932731 2017-04-05 02:06 /data/artist_alias.txt
+#-rw-r--r--   3 root supergroup   55963575 2017-04-05 02:06 /data/artist_data.txt
+#-rw-r--r--   3 root supergroup     174248 2017-04-05 02:06 /data/user_artist_data.txt
+
+# Enter a hadoop-worker container
+
+docker exec -it fd_hadoop-worker_1 /bin/bash
+cd /usr/local/hadoop
+
+# Check Hadoop daemons running in the container
+
+jps
+
+204 Jps
+19 DataNode
+59 NodeManager
+
+-------------------------------------------------------------------------------------------------
+
+# Enter the spark-master container
+
+docker exec -it <containerID> /bin/bash
+
+# Execute SparkPi example application
+
+spark-submit --class org.apache.spark.examples.SparkPi \
+--deploy-mode client --master spark://spark-master:7077 \
+examples/jars/spark-examples_2.11-2.1.0.jar 1000
+
+-------------------------------------------------------------------------------------------------
+
+# All-in
+
+docker-machine create -d virtualbox consul-machine && \
+docker $(docker-machine config consul-machine) \
+run -d --restart=always -p "8500:8500" -h "consul" \
+progrium/consul -server -bootstrap && \
+docker-machine create -d virtualbox --swarm --swarm-master \
+--swarm-discovery="consul://$(docker-machine ip consul-machine):8500" \
+--engine-opt="cluster-store=consul://$(docker-machine ip consul-machine):8500" \
+--engine-opt="cluster-advertise=eth1:2376" swarm-manager && \
+docker-machine create -d virtualbox --swarm \
+--swarm-discovery="consul://$(docker-machine ip consul-machine):8500" \
+--engine-opt="cluster-store=consul://$(docker-machine ip consul-machine):8500" \
+--engine-opt="cluster-advertise=eth1:2376" --engine-label role=hadoop swarm-node-hadoop-01 && \
+docker-machine create -d virtualbox --swarm \
+--swarm-discovery="consul://$(docker-machine ip consul-machine):8500" \
+--engine-opt="cluster-store=consul://$(docker-machine ip consul-machine):8500" \
+--engine-opt="cluster-advertise=eth1:2376" --engine-label role=hadoop swarm-node-hadoop-02 && \
+docker-machine create -d virtualbox --swarm \
+--swarm-discovery="consul://$(docker-machine ip consul-machine):8500" \
+--engine-opt="cluster-store=consul://$(docker-machine ip consul-machine):8500" \
+--engine-opt="cluster-advertise=eth1:2376" --engine-label role=worker swarm-node-01 && \
+docker-machine create -d virtualbox --swarm \
+--swarm-discovery="consul://$(docker-machine ip consul-machine):8500" \
+--engine-opt="cluster-store=consul://$(docker-machine ip consul-machine):8500" \
+--engine-opt="cluster-advertise=eth1:2376" --engine-label role=worker swarm-node-02 && \
+eval "$(docker-machine env --swarm swarm-manager)" && \
+docker-compose up -d spark-master hadoop-master && \
+docker-compose scale spark-worker=4 hadoop-worker=2
+
+docker-machine create -d virtualbox consul-machine && \
+docker $(docker-machine config consul-machine) \
+run -d --restart=always -p "8500:8500" -h "consul" \
+progrium/consul -server -bootstrap && \
+docker-machine create -d virtualbox --swarm --swarm-master \
+--swarm-discovery="consul://$(docker-machine ip consul-machine):8500" \
+--engine-opt="cluster-store=consul://$(docker-machine ip consul-machine):8500" \
+--engine-opt="cluster-advertise=eth1:2376" swarm-manager && \
+docker-machine create -d virtualbox --swarm \
+--swarm-discovery="consul://$(docker-machine ip consul-machine):8500" \
+--engine-opt="cluster-store=consul://$(docker-machine ip consul-machine):8500" \
+--engine-opt="cluster-advertise=eth1:2376" --engine-label role=hadoop swarm-node-hadoop-01 && \
+docker-machine create -d virtualbox --swarm \
+--swarm-discovery="consul://$(docker-machine ip consul-machine):8500" \
+--engine-opt="cluster-store=consul://$(docker-machine ip consul-machine):8500" \
+--engine-opt="cluster-advertise=eth1:2376" --engine-label role=worker swarm-node-01 && \
+eval "$(docker-machine env --swarm swarm-manager)" && \
+docker-compose up -d spark-master hadoop-master && \
+docker-compose scale spark-worker=1 hadoop-worker=1
